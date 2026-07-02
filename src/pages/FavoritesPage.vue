@@ -1,27 +1,48 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import SectionBlock from '../components/SectionBlock.vue'
 import StatCard from '../components/StatCard.vue'
-import {
-  clearFavorites,
-  favoriteCourses,
-  getDailyNewFavoriteCount,
-  getFavoriteCount,
-  getFavoriteQuestions,
-  getImportantFavoriteCount,
-  getSubjectDistribution,
-  getVeryImportantFavoriteCount,
-  studyStore,
-  syncStudyData,
-} from '../data/ai408'
+import { clearFavorites, getFavoritesPage } from '../api/state'
+import { ApiError } from '../api/errors'
 
-const favoriteCount = computed(() => getFavoriteCount())
-const todayFavoriteCount = computed(() => getDailyNewFavoriteCount())
-const importantCount = computed(() => getImportantFavoriteCount())
-const veryImportantCount = computed(() => getVeryImportantFavoriteCount())
-const favoriteDistribution = computed(() => getSubjectDistribution('favorites'))
-const favoriteQuestions = computed(() => getFavoriteQuestions())
+const result = ref({ records: [], recordCount: 0, pageCount: 0 })
+const message = ref('')
+const loading = ref(true)
+
+const favoriteCount = computed(() => result.value.recordCount || 0)
+const importantCount = computed(() => result.value.records.filter((item) => (item.favoriteImportance || 0) === 1).length)
+const veryImportantCount = computed(() => result.value.records.filter((item) => (item.favoriteImportance || 0) === 2).length)
+
+async function loadData() {
+  loading.value = true
+  message.value = ''
+  try {
+    result.value = await getFavoritesPage({
+      page: { pageSize: 20, pageIndex: 1 },
+      params: {},
+    })
+  } catch (e) {
+    message.value = e instanceof ApiError ? e.message : '收藏加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleSync() {
+  await loadData()
+}
+
+async function handleClear() {
+  try {
+    await clearFavorites()
+    await loadData()
+  } catch (e) {
+    message.value = e instanceof ApiError ? e.message : '清空失败'
+  }
+}
+
+onMounted(loadData)
 </script>
 
 <template>
@@ -33,73 +54,30 @@ const favoriteQuestions = computed(() => getFavoriteQuestions())
             <RouterLink to="/mistakes" class="text-slate-500" active-class="active">错题本</RouterLink>
             <RouterLink to="/favorites" class="text-slate-500" active-class="active">收藏题目</RouterLink>
           </div>
-          <div class="mt-4">
-          </div>
+          <div class="mt-4 section-title">收藏题目</div>
         </div>
         <div class="flex flex-wrap gap-3">
-          <button class="craft-btn craft-btn-soft" @click="syncStudyData">同步数据</button>
-          <button class="craft-btn craft-btn-primary" @click="clearFavorites">清空收藏</button>
+          <button class="craft-btn craft-btn-soft" @click="handleSync">同步数据</button>
+          <button class="craft-btn craft-btn-primary" @click="handleClear">清空收藏</button>
         </div>
       </div>
 
       <div class="mt-6 grid gap-4 md:grid-cols-4">
         <StatCard label="收藏总数" :value="favoriteCount" tone="sky" />
-        <StatCard label="今日收藏" :value="todayFavoriteCount" tone="orange" />
         <StatCard label="重要" :value="importantCount" tone="amber" />
         <StatCard label="非常重要" :value="veryImportantCount" tone="rose" />
+        <StatCard label="当前页" :value="result.records.length" tone="slate" />
       </div>
 
-      <div class="mt-6 grid gap-4 lg:grid-cols-3">
-        <div
-          v-for="course in favoriteCourses"
-          :key="course.title"
-          class="craft-card-solid rounded-[1.5rem] bg-gradient-to-br p-5"
-          :class="course.accent"
-        >
-          <div class="text-lg font-semibold text-slate-900">{{ course.title }}</div>
-          <div class="mt-2 text-sm leading-6 text-slate-600">{{ course.subtitle }}</div>
-          <div class="mt-4 text-sm font-semibold text-slate-900">{{ course.subject }}</div>
-        </div>
-      </div>
+      <div v-if="message" class="mt-4 rounded-[1.25rem] bg-rose-50 p-4 text-sm text-rose-600">{{ message }}</div>
     </section>
 
-    <SectionBlock title="收藏分布">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="segmented">
-          <button :class="studyStore.favoriteFilter === '按科目' ? 'active' : 'text-slate-500'" @click="studyStore.favoriteFilter = '按科目'">
-            按科目
-          </button>
-          <button :class="studyStore.favoriteFilter === '按考点' ? 'active' : 'text-slate-500'" @click="studyStore.favoriteFilter = '按考点'">
-            按考点
-          </button>
-        </div>
-        <div class="text-sm text-slate-500">同步时间：{{ studyStore.syncAt }}</div>
-      </div>
-
+    <SectionBlock title="收藏列表">
       <div class="grid gap-3">
-        <div
-          v-for="item in favoriteDistribution"
-          :key="item.subject"
-          class="craft-card-solid flex items-center justify-between rounded-[1.25rem] p-4"
-        >
-          <div>
-            <div class="text-sm font-semibold text-slate-900">{{ item.subject }}</div>
-            <div class="mt-1 text-sm text-slate-500">收藏 {{ item.count }} 题</div>
-          </div>
-          <div class="text-sm text-slate-400">{{ item.total }} 题库</div>
-        </div>
-      </div>
-    </SectionBlock>
-
-    <SectionBlock title="收藏题单" >
-      <div class="grid gap-3">
-        <div
-          v-for="question in favoriteQuestions"
-          :key="question.id"
-          class="craft-card-solid rounded-[1.25rem] p-4"
-        >
-          <div class="text-sm font-semibold text-slate-900">{{ question.title }}</div>
-          <div class="mt-1 text-sm text-slate-500">{{ question.subject }} · {{ question.tag }}</div>
+        <div v-for="item in result.records" :key="item.questionId" class="craft-card-solid rounded-[1.25rem] p-4">
+          <div class="text-sm font-semibold text-slate-900">{{ item.title }}</div>
+          <div class="mt-1 text-sm text-slate-500">{{ item.subjectName }} · 收藏等级 {{ item.favoriteImportance }}</div>
+          <div class="mt-2 text-xs text-slate-400">收藏时间：{{ item.favoriteAt }}</div>
         </div>
       </div>
     </SectionBlock>
