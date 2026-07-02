@@ -1,9 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { resolveApiAssetUrl } from '../api/config'
 import { getImportJob, getImportTemplate, importQuestions } from '../api/admin'
 import { ApiError } from '../api/errors'
+import { clearPracticeSession } from '../stores/study'
 
-const templateUrl = ref('')
+const templatePath = ref('')
 const templateVersion = ref('')
 const file = ref(null)
 const importType = ref('append')
@@ -13,15 +15,35 @@ const uploading = ref(false)
 const polling = ref(null)
 const message = ref('')
 
+const templateUrl = computed(() => resolveApiAssetUrl(templatePath.value))
+const errorFileUrl = computed(() => resolveApiAssetUrl(job.value?.errorFileUrl || ''))
 const canDownload = computed(() => Boolean(templateUrl.value))
+
+function syncJobFeedback(result) {
+  if (!result) {
+    return
+  }
+
+  if (result.status === 'success') {
+    clearPracticeSession()
+    message.value = `导入成功，共导入 ${result.successCount ?? 0} 题。重新开始练习后会从最新题库抽题。`
+    return
+  }
+
+  if (result.status === 'failed') {
+    message.value = result.errorFileUrl
+      ? '导入失败，请下载错误文件修正后重试。'
+      : '导入失败，请检查文件内容后重试。'
+  }
+}
 
 async function loadTemplate() {
   loadingTemplate.value = true
   message.value = ''
   try {
     const result = await getImportTemplate()
-    templateUrl.value = result.templateUrl
-    templateVersion.value = result.version
+    templatePath.value = result.templateUrl || ''
+    templateVersion.value = result.version || ''
   } catch (error) {
     message.value = error instanceof ApiError ? error.message : '模板加载失败'
   } finally {
@@ -39,6 +61,7 @@ function stopPolling() {
 async function refreshJob(jobId) {
   const result = await getImportJob(jobId)
   job.value = result
+  syncJobFeedback(result)
   if (['success', 'failed'].includes(result.status)) {
     stopPolling()
   }
@@ -59,14 +82,17 @@ function onFileChange(event) {
 
 async function submitImport() {
   if (!file.value) {
-    message.value = '请选择文件'
+    message.value = '请选择导入文件'
     return
   }
+
   uploading.value = true
   message.value = ''
   try {
     const result = await importQuestions(file.value, importType.value)
+    clearPracticeSession()
     job.value = result
+    message.value = '导入任务已提交，正在处理...'
     startPolling(result.jobId)
     await refreshJob(result.jobId)
   } catch (error) {
@@ -89,12 +115,12 @@ loadTemplate()
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div class="section-title">题库导入</div>
-          <p class="section-subtitle mt-1">管理员上传 Excel 或 CSV，后端异步导入并生成错误文件。</p>
+          <p class="section-subtitle mt-1">管理员上传 Excel 或 CSV，后端异步导入并在失败时生成错误文件。</p>
         </div>
         <a v-if="canDownload" :href="templateUrl" class="craft-btn craft-btn-soft" target="_blank" rel="noreferrer">
           下载模板
         </a>
-        <span v-else class="text-sm text-slate-400">{{ loadingTemplate ? '模板加载中...' : '模板不可用' }}</span>
+        <span v-else class="text-sm text-slate-400">{{ loadingTemplate ? '模板加载中...' : '模板暂不可用' }}</span>
       </div>
 
       <div class="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr]">
@@ -124,7 +150,7 @@ loadTemplate()
             <div>status: {{ job.status }}</div>
             <div>total: {{ job.totalCount ?? 0 }} / success: {{ job.successCount ?? 0 }} / failed: {{ job.failedCount ?? 0 }}</div>
             <div>updatedAt: {{ job.updatedAt }}</div>
-            <a v-if="job.errorFileUrl" :href="job.errorFileUrl" class="text-sky-600 underline" target="_blank" rel="noreferrer">
+            <a v-if="errorFileUrl" :href="errorFileUrl" class="text-sky-600 underline" target="_blank" rel="noreferrer">
               下载错误文件
             </a>
           </div>

@@ -57,3 +57,7 @@ export function setPracticeSession(sessionId, questionId = '') {
 export function setCurrentQuestionId(questionId) {
   studyStore.currentQuestionId = questionId || ''
 }
+
+export function clearPracticeSession() {
+  setPracticeSession('')
+}

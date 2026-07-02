@@ -7,7 +7,7 @@ import { featureCards, sprintShortcuts } from '../data/ai408'
 import { getSubjects } from '../api/questions'
 import { getStudySummary } from '../api/users'
 import { authStore } from '../stores/auth'
-import { setSelectedSubjectCode, studyStore } from '../stores/study'
+import { clearPracticeSession, setSelectedSubjectCode, studyStore } from '../stores/study'
 
 const router = useRouter()
 const subjects = ref([])
@@ -44,6 +44,7 @@ async function loadData() {
 }
 
 function startPractice() {
+  clearPracticeSession()
   router.push('/practice')
 }
 
