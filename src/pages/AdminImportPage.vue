@@ -26,7 +26,7 @@ function syncJobFeedback(result) {
 
   if (result.status === 'success') {
     clearPracticeSession()
-    message.value = `导入成功，共导入 ${result.successCount ?? 0} 题。重新开始练习后会从最新题库抽题。`
+    message.value = `导入完成，成功 ${result.successCount ?? 0} 题，失败 ${result.failedCount ?? 0} 题。重新进入刷题后会按最新题库抽题。`
     return
   }
 
@@ -71,7 +71,7 @@ function startPolling(jobId) {
   stopPolling()
   polling.value = setInterval(() => {
     refreshJob(jobId).catch((error) => {
-      message.value = error instanceof ApiError ? error.message : '查询任务失败'
+      message.value = error instanceof ApiError ? error.message : '查询导入任务失败'
     })
   }, 2000)
 }
@@ -82,7 +82,7 @@ function onFileChange(event) {
 
 async function submitImport() {
   if (!file.value) {
-    message.value = '请选择导入文件'
+    message.value = '请选择要导入的 Excel 或 CSV 文件'
     return
   }
 
@@ -92,7 +92,7 @@ async function submitImport() {
     const result = await importQuestions(file.value, importType.value)
     clearPracticeSession()
     job.value = result
-    message.value = '导入任务已提交，正在处理...'
+    message.value = '导入任务已提交，正在后台处理...'
     startPolling(result.jobId)
     await refreshJob(result.jobId)
   } catch (error) {
@@ -115,12 +115,19 @@ loadTemplate()
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div class="section-title">题库导入</div>
-          <p class="section-subtitle mt-1">管理员上传 Excel 或 CSV，后端异步导入并在失败时生成错误文件。</p>
+          <p class="section-subtitle mt-1">管理员上传 Excel 或 CSV，后端异步导入，失败行会生成错误文件。</p>
         </div>
         <a v-if="canDownload" :href="templateUrl" class="craft-btn craft-btn-soft" target="_blank" rel="noreferrer">
           下载模板
         </a>
         <span v-else class="text-sm text-slate-400">{{ loadingTemplate ? '模板加载中...' : '模板暂不可用' }}</span>
+      </div>
+
+      <div class="mt-5 rounded-[1.5rem] border border-slate-200 bg-white/70 p-4 text-sm leading-7 text-slate-600">
+        <div>图片题支持两种写法：</div>
+        <div>1. `stem_image_path`：填写后端运行机器可访问的图片绝对路径，导入时自动上传到 COS。</div>
+        <div>2. `stem_image_url`：填写已经可访问的绝对 URL，导入时直接落库。</div>
+        <div>优先级：`stem_image_url` 高于 `stem_image_path`。两列都为空时，按普通无图题导入。</div>
       </div>
 
       <div class="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr]">

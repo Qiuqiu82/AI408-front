@@ -28,6 +28,7 @@ const currentQuestionId = computed(() => {
   return session.value?.currentQuestionId || ''
 })
 const currentQuestion = computed(() => currentQuestionDetail.value || null)
+const currentQuestionImageUrl = computed(() => currentQuestion.value?.stemImageUrl || '')
 const currentBrief = computed(() => currentQuestionBriefList.value.find((item) => item.questionId === currentQuestionId.value) || null)
 const currentIndex = computed(() => currentQuestionBriefList.value.findIndex((item) => item.questionId === currentQuestionId.value))
 const selectedAnswers = computed(() => answerCache.value[currentQuestionId.value] || [])
@@ -105,7 +106,7 @@ async function loadQuestion(questionId) {
 
   const brief = currentQuestionBriefList.value.find((item) => item.questionId === questionId)
   const view = isMemorizeMode.value || (brief?.questionStatus && brief.questionStatus !== 'new') ? 'review' : 'practice'
-  const detail = await getQuestionDetail(questionId, view)
+  const detail = await getQuestionDetail(questionId, view, session.value?.sessionId || '')
   currentQuestionDetail.value = detail
   syncQuestionCaches(questionId, detail, brief)
 }
@@ -356,7 +357,7 @@ onMounted(loadOrCreateSession)
             <button :class="practiceMode === 'memorize' ? 'active' : 'text-slate-500'" @click="switchMode('memorize')">背题</button>
           </div>
           <div class="flex items-center gap-3 text-sm text-slate-500">
-            <button class="craft-btn craft-btn-soft px-4 py-2" @click="generateAiExplanation">AI 讲解</button>
+            <button class="craft-btn craft-btn-soft px-4 py-2" @click="generateAiExplanation">AI讲解</button>
             <button class="craft-btn craft-btn-soft px-4 py-2" @click="finishSession">结束练习</button>
           </div>
         </div>
@@ -383,7 +384,17 @@ onMounted(loadOrCreateSession)
           </div>
 
           <h1 class="mt-4 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{{ currentQuestion.title }}</h1>
-          <p class="mt-3 text-sm leading-7 text-slate-500">{{ currentQuestion.stem }}</p>
+          <p class="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-500">{{ currentQuestion.stem }}</p>
+
+          <a
+            v-if="currentQuestionImageUrl"
+            :href="currentQuestionImageUrl"
+            target="_blank"
+            rel="noreferrer"
+            class="mt-5 block overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-3"
+          >
+            <img :src="currentQuestionImageUrl" alt="题目配图" class="max-h-[420px] w-full rounded-[1rem] object-contain" />
+          </a>
 
           <div v-if="currentQuestion.questionType === 'single'" class="mt-6 space-y-3">
             <button
@@ -468,7 +479,7 @@ onMounted(loadOrCreateSession)
         </div>
 
         <div v-if="aiLoading || aiText || aiError" class="mt-6 rounded-[1.5rem] bg-slate-50 p-5 text-sm leading-7 text-slate-700">
-          <div class="mb-2 font-semibold text-slate-900">AI 讲解</div>
+          <div class="mb-2 font-semibold text-slate-900">AI讲解</div>
           <div v-if="aiLoading && !aiText">正在生成...</div>
           <div v-if="aiText" class="whitespace-pre-wrap">{{ aiText }}</div>
           <div v-if="aiError" class="mt-2 text-rose-600">{{ aiError }}</div>

@@ -13,8 +13,8 @@ export function getQuestionPage(payload) {
   })
 }
 
-export function getQuestionDetail(questionId, view = 'practice') {
+export function getQuestionDetail(questionId, view = 'practice', sessionId = '') {
   return request(`/api/v1/questions/${questionId}`, {
-    query: { view },
+    query: { view, sessionId },
   })
 }
