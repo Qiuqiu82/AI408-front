@@ -23,6 +23,30 @@ function persistState(state) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
 }
 
+function normalizePendingPracticeRequest(value) {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const mode = value.mode || 'sequence'
+  const questionIds = Array.isArray(value.questionIds)
+    ? value.questionIds.filter((item) => typeof item === 'string' && item)
+    : []
+
+  if (!questionIds.length && !['wrongBook', 'favorites'].includes(mode)) {
+    return null
+  }
+
+  return {
+    mode,
+    subjectCode: value.subjectCode || '',
+    questionIds,
+    limit: value.limit || (questionIds.length || 20),
+    source: value.source || 'review-wrong-retry',
+    title: value.title || '',
+  }
+}
+
 const storedState = loadStoredState()
 
 export const studyStore = reactive({
@@ -30,6 +54,7 @@ export const studyStore = reactive({
   currentSessionId: storedState.currentSessionId || '',
   currentQuestionId: storedState.currentQuestionId || '',
   practiceMode: storedState.practiceMode || 'sequence',
+  pendingPracticeRequest: normalizePendingPracticeRequest(storedState.pendingPracticeRequest),
 })
 
 watch(
@@ -40,6 +65,7 @@ watch(
       currentSessionId: studyStore.currentSessionId,
       currentQuestionId: studyStore.currentQuestionId,
       practiceMode: studyStore.practiceMode,
+      pendingPracticeRequest: studyStore.pendingPracticeRequest,
     })
   },
   { deep: true }
@@ -60,4 +86,12 @@ export function setCurrentQuestionId(questionId) {
 
 export function clearPracticeSession() {
   setPracticeSession('')
+}
+
+export function setPendingPracticeRequest(request) {
+  studyStore.pendingPracticeRequest = normalizePendingPracticeRequest(request)
+}
+
+export function clearPendingPracticeRequest() {
+  studyStore.pendingPracticeRequest = null
 }

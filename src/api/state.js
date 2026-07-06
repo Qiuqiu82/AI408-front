@@ -9,6 +9,10 @@ export function getWrongBookPage(payload) {
   })
 }
 
+export function getWrongBookStats() {
+  return request('/api/v1/me/wrong-book/stats')
+}
+
 export function getFavoritesPage(payload) {
   return request('/api/v1/me/favorites/page', {
     method: 'POST',

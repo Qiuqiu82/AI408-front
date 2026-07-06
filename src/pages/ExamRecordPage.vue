@@ -5,6 +5,7 @@ import SectionBlock from '../components/SectionBlock.vue'
 import StatCard from '../components/StatCard.vue'
 import { getExamRecordDetail } from '../api/exam'
 import { ApiError } from '../api/errors'
+import { clearPracticeSession, setPendingPracticeRequest, studyStore } from '../stores/study'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +26,7 @@ const record = ref({
 })
 
 const wrongCount = computed(() => record.value.wrongCount || 0)
+const hasWrongQuestions = computed(() => (record.value.wrongQuestionIds || []).length > 0)
 
 function formatDuration(totalSeconds) {
   const safe = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0
@@ -35,7 +37,7 @@ function formatDuration(totalSeconds) {
 }
 
 function answerText(answerList) {
-  return (answerList || []).join(' / ') || '未作答'
+  return (answerList || []).join(' / ') || '暂无'
 }
 
 function optionClass(question, optionKey) {
@@ -62,6 +64,26 @@ async function loadRecord() {
   }
 }
 
+function retryWrongQuestions() {
+  const wrongIds = record.value.wrongQuestionIds || []
+  if (!wrongIds.length) {
+    return
+  }
+
+  const firstWrong = record.value.wrongQuestions?.[0]
+  setPendingPracticeRequest({
+    mode: 'sequence',
+    subjectCode: firstWrong?.subjectCode || studyStore.selectedSubjectCode,
+    questionIds: wrongIds,
+    limit: wrongIds.length,
+    source: 'exam-wrong-retry',
+    title: '重做本次考试错题',
+  })
+  clearPracticeSession()
+  studyStore.practiceMode = 'sequence'
+  router.push('/practice')
+}
+
 onMounted(loadRecord)
 </script>
 
@@ -74,8 +96,9 @@ onMounted(loadRecord)
           <div class="section-subtitle mt-1">记录编号：{{ record.recordId || route.params.id }}</div>
         </div>
         <div class="flex flex-wrap gap-3">
-          <button class="craft-btn craft-btn-soft" @click="router.push('/exam')">返回考试页</button>
-          <button class="craft-btn craft-btn-primary" @click="router.push('/mistakes')">查看错题本</button>
+          <button class="craft-btn craft-btn-soft" @click="router.push('/exam')">返回模拟考试</button>
+          <button v-if="hasWrongQuestions" class="craft-btn craft-btn-primary" @click="retryWrongQuestions">重做本次错题</button>
+          <button class="craft-btn craft-btn-soft" @click="router.push('/mistakes')">查看错题本</button>
         </div>
       </div>
 
@@ -92,7 +115,7 @@ onMounted(loadRecord)
         <div class="mt-6 rounded-[1.5rem] bg-slate-50 p-5 text-sm leading-7 text-slate-600">
           <div>交卷时间：{{ record.submittedAt }}</div>
           <div>正确题数：{{ record.correctCount }}</div>
-          <div>错题已自动加入错题本，可继续回顾。</div>
+          <div>错题已自动加入错题本，也可以直接重做本次考试错题。</div>
         </div>
       </div>
     </section>
@@ -144,7 +167,7 @@ onMounted(loadRecord)
             >
               <div class="text-sm font-semibold text-slate-900">步骤 {{ index + 1 }}</div>
               <p class="mt-2 text-sm leading-6 text-slate-600">{{ step }}</p>
-              <div class="mt-2 text-xs text-slate-400">你的完成情况：{{ question.stepStatus[index] ? '已勾选' : '未勾选' }}</div>
+              <div class="mt-2 text-xs text-slate-400">你的完成情况：{{ question.stepStatus[index] ? '已完成' : '未完成' }}</div>
             </div>
           </div>
 

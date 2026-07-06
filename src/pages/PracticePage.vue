@@ -1,11 +1,21 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { getSubjects, getQuestionDetail } from '../api/questions'
 import { createPracticeSession, finishPracticeSession, getPracticeSession, submitPracticeAnswer, updateEssaySteps } from '../api/practice'
 import { streamExplanation } from '../api/ai'
 import { ApiError } from '../api/errors'
 import { authStore } from '../stores/auth'
-import { clearPracticeSession, setPracticeSession, setSelectedSubjectCode, studyStore } from '../stores/study'
+import {
+  clearPendingPracticeRequest,
+  clearPracticeSession,
+  setPendingPracticeRequest,
+  setPracticeSession,
+  setSelectedSubjectCode,
+  studyStore,
+} from '../stores/study'
+
+const router = useRouter()
 
 const subjects = ref([])
 const session = ref(null)
@@ -39,12 +49,25 @@ const reviewAnalysis = computed(() => currentQuestion.value?.analysis || current
 const isMemorizeMode = computed(() => practiceMode.value === 'memorize')
 const isCurrentAnswered = computed(() => currentBrief.value?.questionStatus && currentBrief.value.questionStatus !== 'new')
 const shouldShowReview = computed(() => isMemorizeMode.value || isCurrentAnswered.value || Boolean(currentResult.value))
-const previousQuestionId = computed(() => currentIndex.value > 0 ? currentQuestionBriefList.value[currentIndex.value - 1]?.questionId || '' : '')
+const previousQuestionId = computed(() => (currentIndex.value > 0 ? currentQuestionBriefList.value[currentIndex.value - 1]?.questionId || '' : ''))
 const nextQuestionId = computed(() =>
   currentIndex.value >= 0 && currentIndex.value < currentQuestionBriefList.value.length - 1
     ? currentQuestionBriefList.value[currentIndex.value + 1]?.questionId || ''
     : ''
 )
+const currentUserAnswerText = computed(() => {
+  if (!currentQuestion.value) {
+    return '暂无'
+  }
+  if (currentQuestion.value.questionType === 'essay') {
+    const steps = currentEssaySteps.value
+    if (!steps.length) {
+      return '暂无'
+    }
+    return `已完成 ${steps.filter(Boolean).length}/${steps.length} 步`
+  }
+  return answerText(selectedAnswers.value)
+})
 
 function resetExplain() {
   aiText.value = ''
@@ -111,6 +134,36 @@ async function loadQuestion(questionId) {
   syncQuestionCaches(questionId, detail, brief)
 }
 
+function buildDefaultSessionPayload() {
+  return {
+    mode: 'sequence',
+    subjectCode: studyStore.selectedSubjectCode,
+    limit: 20,
+    source: 'practice-sequence',
+  }
+}
+
+async function resolveSession() {
+  const pendingRequest = studyStore.pendingPracticeRequest
+  if (pendingRequest) {
+    const created = await createPracticeSession({
+      mode: pendingRequest.mode || 'sequence',
+      subjectCode: pendingRequest.subjectCode || studyStore.selectedSubjectCode,
+      questionIds: pendingRequest.questionIds || [],
+      limit: pendingRequest.limit || pendingRequest.questionIds?.length || 20,
+      source: pendingRequest.source || 'review-wrong-retry',
+    })
+    clearPendingPracticeRequest()
+    return created
+  }
+
+  if (studyStore.currentSessionId) {
+    return getPracticeSession(studyStore.currentSessionId)
+  }
+
+  return createPracticeSession(buildDefaultSessionPayload())
+}
+
 async function loadOrCreateSession() {
   loading.value = true
   error.value = ''
@@ -118,17 +171,7 @@ async function loadOrCreateSession() {
   try {
     await loadSubjects()
     practiceMode.value = studyStore.practiceMode === 'memorize' ? 'memorize' : 'sequence'
-
-    if (studyStore.currentSessionId) {
-      session.value = await getPracticeSession(studyStore.currentSessionId)
-    } else {
-      session.value = await createPracticeSession({
-        mode: 'sequence',
-        subjectCode: studyStore.selectedSubjectCode,
-        limit: 20,
-        source: practiceMode.value,
-      })
-    }
+    session.value = await resolveSession()
 
     const initialQuestionId =
       (studyStore.currentQuestionId && currentQuestionBriefList.value.some((item) => item.questionId === studyStore.currentQuestionId)
@@ -139,8 +182,8 @@ async function loadOrCreateSession() {
 
     setPracticeSession(session.value.sessionId, initialQuestionId)
     await loadQuestion(initialQuestionId)
-  } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '练习会话加载失败'
+  } catch (loadError) {
+    error.value = loadError instanceof ApiError ? loadError.message : '练习会话加载失败'
   } finally {
     loading.value = false
   }
@@ -165,6 +208,7 @@ async function reloadSession(preferredQuestionId = currentQuestionId.value) {
 
 async function switchSubject(subjectCode) {
   setSelectedSubjectCode(subjectCode)
+  clearPendingPracticeRequest()
   clearPracticeSession()
   answerCache.value = {}
   resultCache.value = {}
@@ -222,16 +266,7 @@ async function submitCurrentAnswer(answer) {
 }
 
 async function chooseSingle(optionKey) {
-  if (!currentQuestion.value) {
-    return
-  }
-
-  if (isMemorizeMode.value) {
-    updateAnswerCache(currentQuestionId.value, [optionKey])
-    return
-  }
-
-  if (isCurrentAnswered.value) {
+  if (!currentQuestion.value || isMemorizeMode.value || isCurrentAnswered.value) {
     return
   }
 
@@ -239,6 +274,10 @@ async function chooseSingle(optionKey) {
 }
 
 function chooseMultiple(optionKey) {
+  if (shouldShowReview.value) {
+    return
+  }
+
   const selected = new Set(selectedAnswers.value)
   if (selected.has(optionKey)) {
     selected.delete(optionKey)
@@ -282,6 +321,12 @@ function isCorrectOption(optionKey) {
 function optionClass(optionKey) {
   const selected = selectedAnswers.value.includes(optionKey)
   const correct = isCorrectOption(optionKey)
+
+  if (isMemorizeMode.value) {
+    return correct
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : 'border-slate-200 bg-white text-slate-700'
+  }
 
   if (shouldShowReview.value) {
     if (correct) {
@@ -327,8 +372,8 @@ async function generateAiExplanation() {
         },
       }
     )
-  } catch (e) {
-    aiError.value = e instanceof ApiError ? e.message : 'AI 讲解失败'
+  } catch (streamError) {
+    aiError.value = streamError instanceof ApiError ? streamError.message : 'AI 讲解失败'
   } finally {
     aiLoading.value = false
   }
@@ -339,9 +384,50 @@ async function finishSession() {
     return
   }
 
-  const result = await finishPracticeSession(session.value.sessionId)
-  setPracticeSession(session.value.sessionId, currentQuestionId.value)
-  aiText.value = `本次练习已结束，正确率 ${result.accuracy}%`
+  const confirmed = window.confirm('结束练习后将生成本次复盘，是否继续？')
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    const result = await finishPracticeSession(session.value.sessionId)
+    setPracticeSession(result.sessionId, currentQuestionId.value)
+    resetExplain()
+    router.push('/review')
+  } catch (finishError) {
+    error.value = finishError instanceof ApiError ? finishError.message : '结束练习失败'
+  }
+}
+
+async function retryWrongQuestionsFromCurrentSession() {
+  if (!session.value) {
+    return
+  }
+
+  const wrongIds = currentQuestionBriefList.value
+    .filter((item) => item.questionStatus === 'wrong')
+    .map((item) => item.questionId)
+
+  if (!wrongIds.length) {
+    return
+  }
+
+  setPendingPracticeRequest({
+    mode: 'sequence',
+    subjectCode: session.value.subjectCode || studyStore.selectedSubjectCode,
+    questionIds: wrongIds,
+    limit: wrongIds.length,
+    source: 'practice-wrong-retry',
+    title: '重做本次错题',
+  })
+  clearPracticeSession()
+  practiceMode.value = 'sequence'
+  studyStore.practiceMode = 'sequence'
+  answerCache.value = {}
+  resultCache.value = {}
+  essayStepCache.value = {}
+  resetExplain()
+  await loadOrCreateSession()
 }
 
 onMounted(loadOrCreateSession)
@@ -407,7 +493,15 @@ onMounted(loadOrCreateSession)
               <div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-sm font-semibold shadow-sm">
                 {{ option.key }}
               </div>
-              <div class="text-base">{{ option.text }}</div>
+              <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
+                <div class="text-base">{{ option.text }}</div>
+                <span
+                  v-if="isMemorizeMode && isCorrectOption(option.key)"
+                  class="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"
+                >
+                  正确答案
+                </span>
+              </div>
             </button>
           </div>
 
@@ -417,12 +511,20 @@ onMounted(loadOrCreateSession)
               :key="option.key"
               class="flex w-full items-center gap-4 rounded-[1.25rem] border px-4 py-4 text-left transition"
               :class="optionClass(option.key)"
-              @click="!shouldShowReview && chooseMultiple(option.key)"
+              @click="chooseMultiple(option.key)"
             >
               <div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-sm font-semibold shadow-sm">
                 {{ option.key }}
               </div>
-              <div class="text-base">{{ option.text }}</div>
+              <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
+                <div class="text-base">{{ option.text }}</div>
+                <span
+                  v-if="isMemorizeMode && isCorrectOption(option.key)"
+                  class="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"
+                >
+                  正确答案
+                </span>
+              </div>
             </button>
             <button v-if="!shouldShowReview" class="craft-btn craft-btn-primary mt-2" @click="submitMultiple">提交答案</button>
           </div>
@@ -430,7 +532,7 @@ onMounted(loadOrCreateSession)
           <div v-else class="mt-6 space-y-4">
             <div
               v-for="(step, index) in currentQuestion.steps"
-              :key="step"
+              :key="`${currentQuestion.id}-${index}`"
               class="rounded-[1.25rem] border border-slate-200 bg-white p-4"
             >
               <div class="flex items-start justify-between gap-4">
@@ -451,7 +553,9 @@ onMounted(loadOrCreateSession)
 
           <div v-if="shouldShowReview" class="mt-6 rounded-[1.5rem] bg-slate-50 p-5 text-sm leading-7 text-slate-700">
             <div class="flex flex-wrap items-center gap-3">
-              <div class="font-semibold text-slate-900">{{ isMemorizeMode ? '背题模式' : currentResult?.isCorrect ? '回答正确' : '回答错误' }}</div>
+              <div class="font-semibold text-slate-900">
+                {{ isMemorizeMode ? '背题模式' : currentResult?.isCorrect ? '回答正确' : '回答错误' }}
+              </div>
               <span
                 v-if="!isMemorizeMode && currentResult"
                 class="rounded-full px-3 py-1 text-xs font-semibold"
@@ -460,7 +564,7 @@ onMounted(loadOrCreateSession)
                 {{ currentResult.isCorrect ? '答对了' : '答错了' }}
               </span>
             </div>
-            <div v-if="!isMemorizeMode" class="mt-3">你的答案：{{ answerText(selectedAnswers) }}</div>
+            <div v-if="!isMemorizeMode" class="mt-3">你的答案：{{ currentUserAnswerText }}</div>
             <div class="mt-2">正确答案：{{ answerText(reviewAnswer) }}</div>
             <div class="mt-3 whitespace-pre-wrap">答案解析：{{ reviewAnalysis || '暂无解析' }}</div>
           </div>
@@ -469,9 +573,7 @@ onMounted(loadOrCreateSession)
             <button class="craft-btn craft-btn-soft px-4 py-2" :disabled="!previousQuestionId" @click="goToQuestion(previousQuestionId)">
               上一题
             </button>
-            <div class="text-sm text-slate-500">
-              第 {{ currentIndex + 1 }} / {{ currentQuestionBriefList.length || 0 }} 题
-            </div>
+            <div class="text-sm text-slate-500">第 {{ currentIndex + 1 }} / {{ currentQuestionBriefList.length || 0 }} 题</div>
             <button class="craft-btn craft-btn-primary px-4 py-2" :disabled="!nextQuestionId" @click="goToQuestion(nextQuestionId)">
               下一题
             </button>
@@ -523,6 +625,13 @@ onMounted(loadOrCreateSession)
           <div>当前题目：{{ currentIndex >= 0 ? currentIndex + 1 : 0 }}</div>
           <div>用户：{{ authStore.user?.nickname || authStore.user?.mobile || '未登录' }}</div>
         </div>
+        <button
+          v-if="currentQuestionBriefList.some((item) => item.questionStatus === 'wrong')"
+          class="craft-btn craft-btn-soft mt-4 w-full"
+          @click="retryWrongQuestionsFromCurrentSession"
+        >
+          重做当前错题
+        </button>
       </div>
     </aside>
   </div>
