@@ -8,6 +8,7 @@ const route = useRoute()
 const navItems = [
   { name: 'home', label: '首页', path: '/' },
   { name: 'practice', label: '刷题', path: '/practice' },
+  { name: 'exam', label: '考试', path: '/exam' },
   { name: 'review', label: '复盘', path: '/review' },
   { name: 'mistakes', label: '错题本', path: '/mistakes' },
   { name: 'favorites', label: '收藏', path: '/favorites' },
@@ -15,6 +16,13 @@ const navItems = [
 
 const displayName = computed(() => authStore.user?.nickname || authStore.user?.mobile || '未登录')
 const isAdmin = computed(() => authStore.user?.role === 'admin')
+
+function isNavActive(item) {
+  if (item.name === 'exam') {
+    return route.path.startsWith('/exam')
+  }
+  return route.name === item.name
+}
 </script>
 
 <template>
@@ -36,7 +44,7 @@ const isAdmin = computed(() => authStore.user?.role === 'admin')
           :key="item.name"
           :to="item.path"
           class="rounded-full px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-          :class="route.name === item.name ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : ''"
+          :class="isNavActive(item) ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : ''"
         >
           {{ item.label }}
         </RouterLink>
@@ -70,7 +78,7 @@ const isAdmin = computed(() => authStore.user?.role === 'admin')
           v-for="item in navItems"
           :key="item.name"
           :to="item.path"
-          :class="route.name === item.name ? 'active' : 'text-slate-500'"
+          :class="isNavActive(item) ? 'active' : 'text-slate-500'"
           class="mx-0.5 inline-flex"
         >
           {{ item.label }}

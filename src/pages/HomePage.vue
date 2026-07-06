@@ -130,9 +130,9 @@ onMounted(loadData)
             <div class="text-base font-medium">顺序练习</div>
             <div class="mt-2 text-3xl font-semibold">{{ summary.answeredCount }}</div>
           </button>
-          <button class="grid h-40 w-40 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-center text-white shadow-[0_24px_50px_rgba(20,184,166,0.2)] transition hover:scale-[1.02]" @click="router.push('/admin/import')">
-            <div class="text-base font-medium">题库导入</div>
-            <div class="mt-2 text-xl font-semibold">管理员</div>
+          <button class="grid h-40 w-40 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-center text-white shadow-[0_24px_50px_rgba(20,184,166,0.2)] transition hover:scale-[1.02]" @click="router.push('/exam')">
+            <div class="text-base font-medium">模拟考试</div>
+            <div class="mt-2 text-xl font-semibold">仿真冲刺</div>
           </button>
         </div>
 
