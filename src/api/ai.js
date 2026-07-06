@@ -27,12 +27,16 @@ function parseSseChunk(buffer, onEvent) {
     try {
       data = JSON.parse(dataText)
     } catch {
-      // keep text payload
+      // keep raw text payload
     }
     onEvent(eventName, data)
   }
 
   return remaining
+}
+
+function eventContent(data) {
+  return typeof data === 'object' && data !== null ? data.content || '' : String(data || '')
 }
 
 export async function streamExplanation(payload, handlers = {}) {
@@ -63,26 +67,26 @@ export async function streamExplanation(payload, handlers = {}) {
 
       buffer += decoder.decode(value, { stream: true })
       buffer = parseSseChunk(buffer, (eventName, data) => {
-        const content = typeof data === 'object' && data !== null ? data.content || '' : String(data || '')
+        const content = eventContent(data)
         if (eventName === 'delta') {
           handlers.onDelta?.(content)
         } else if (eventName === 'done') {
           handlers.onDone?.()
         } else if (eventName === 'error') {
-          handlers.onError?.(content || 'AI 讲解失败')
+          handlers.onError?.(content || 'AI讲解生成失败，请稍后重试')
         }
       })
     }
 
     buffer += decoder.decode()
     parseSseChunk(buffer, (eventName, data) => {
-      const content = typeof data === 'object' && data !== null ? data.content || '' : String(data || '')
+      const content = eventContent(data)
       if (eventName === 'delta') {
         handlers.onDelta?.(content)
       } else if (eventName === 'done') {
         handlers.onDone?.()
       } else if (eventName === 'error') {
-        handlers.onError?.(content || 'AI 讲解失败')
+        handlers.onError?.(content || 'AI讲解生成失败，请稍后重试')
       }
     })
   } finally {
