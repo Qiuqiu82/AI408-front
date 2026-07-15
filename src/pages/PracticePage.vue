@@ -25,6 +25,8 @@ const error = ref('')
 const aiText = ref('')
 const aiLoading = ref(false)
 const aiError = ref('')
+const answerSubmitting = ref(false)
+const answerError = ref('')
 const practiceMode = ref(studyStore.practiceMode === 'memorize' ? 'memorize' : 'sequence')
 const answerCache = ref({})
 const resultCache = ref({})
@@ -47,7 +49,11 @@ const currentEssaySteps = computed(() => essayStepCache.value[currentQuestionId.
 const reviewAnswer = computed(() => currentQuestion.value?.answer || currentResult.value?.correctAnswer || [])
 const reviewAnalysis = computed(() => currentQuestion.value?.analysis || currentResult.value?.analysis || '')
 const isMemorizeMode = computed(() => practiceMode.value === 'memorize')
-const isCurrentAnswered = computed(() => currentBrief.value?.questionStatus && currentBrief.value.questionStatus !== 'new')
+const isCurrentAnswered = computed(() =>
+  currentBrief.value?.questionStatus === 'correct'
+  || currentBrief.value?.questionStatus === 'wrong'
+  || Boolean(currentResult.value)
+)
 const shouldShowReview = computed(() => isMemorizeMode.value || isCurrentAnswered.value || Boolean(currentResult.value))
 const previousQuestionId = computed(() => (currentIndex.value > 0 ? currentQuestionBriefList.value[currentIndex.value - 1]?.questionId || '' : ''))
 const nextQuestionId = computed(() =>
@@ -72,6 +78,7 @@ const currentUserAnswerText = computed(() => {
 function resetExplain() {
   aiText.value = ''
   aiError.value = ''
+  answerError.value = ''
 }
 
 function updateAnswerCache(questionId, answer) {
@@ -101,7 +108,7 @@ function syncQuestionCaches(questionId, detail, brief) {
     updateEssayCache(questionId, (detail.steps || []).map(() => false))
   }
 
-  if (brief.questionStatus && brief.questionStatus !== 'new') {
+  if (['correct', 'wrong'].includes(brief.questionStatus)) {
     resultCache.value = {
       ...resultCache.value,
       [questionId]: {
@@ -128,7 +135,7 @@ async function loadQuestion(questionId) {
   }
 
   const brief = currentQuestionBriefList.value.find((item) => item.questionId === questionId)
-  const view = isMemorizeMode.value || (brief?.questionStatus && brief.questionStatus !== 'new') ? 'review' : 'practice'
+  const view = isMemorizeMode.value || ['correct', 'wrong'].includes(brief?.questionStatus) ? 'review' : 'practice'
   const detail = await getQuestionDetail(questionId, view, session.value?.sessionId || '')
   currentQuestionDetail.value = detail
   syncQuestionCaches(questionId, detail, brief)
@@ -239,30 +246,38 @@ async function goToQuestion(questionId) {
 }
 
 async function submitCurrentAnswer(answer) {
-  if (!session.value) {
+  if (!session.value || answerSubmitting.value) {
     return
   }
 
   const questionId = currentQuestionId.value
   updateAnswerCache(questionId, answer)
+  answerSubmitting.value = true
+  answerError.value = ''
 
-  const result = await submitPracticeAnswer(session.value.sessionId, {
-    questionId,
-    answer,
-  })
+  try {
+    const result = await submitPracticeAnswer(session.value.sessionId, {
+      questionId,
+      answer,
+    })
 
-  resultCache.value = {
-    ...resultCache.value,
-    [questionId]: {
-      questionStatus: result.questionStatus,
-      isCorrect: result.isCorrect,
-      correctAnswer: result.correctAnswer || [],
-      analysis: result.analysis || '',
-    },
+    resultCache.value = {
+      ...resultCache.value,
+      [questionId]: {
+        questionStatus: result.questionStatus,
+        isCorrect: result.isCorrect,
+        correctAnswer: result.correctAnswer || [],
+        analysis: result.analysis || '',
+      },
+    }
+
+    await reloadSession(questionId)
+    resetExplain()
+  } catch (submitError) {
+    answerError.value = submitError instanceof ApiError ? submitError.message : '提交答案失败，请重试'
+  } finally {
+    answerSubmitting.value = false
   }
-
-  await reloadSession(questionId)
-  resetExplain()
 }
 
 async function chooseSingle(optionKey) {
@@ -488,6 +503,7 @@ onMounted(loadOrCreateSession)
               :key="option.key"
               class="flex w-full items-center gap-4 rounded-[1.25rem] border px-4 py-4 text-left transition"
               :class="optionClass(option.key)"
+              :disabled="answerSubmitting || shouldShowReview"
               @click="chooseSingle(option.key)"
             >
               <div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-sm font-semibold shadow-sm">
@@ -511,6 +527,7 @@ onMounted(loadOrCreateSession)
               :key="option.key"
               class="flex w-full items-center gap-4 rounded-[1.25rem] border px-4 py-4 text-left transition"
               :class="optionClass(option.key)"
+              :disabled="answerSubmitting || shouldShowReview"
               @click="chooseMultiple(option.key)"
             >
               <div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-sm font-semibold shadow-sm">
@@ -549,6 +566,10 @@ onMounted(loadOrCreateSession)
                 </button>
               </div>
             </div>
+          </div>
+
+          <div v-if="answerError" class="mt-4 rounded-[1.25rem] bg-rose-50 p-4 text-sm text-rose-600">
+            {{ answerError }}
           </div>
 
           <div v-if="shouldShowReview" class="mt-6 rounded-[1.5rem] bg-slate-50 p-5 text-sm leading-7 text-slate-700">
