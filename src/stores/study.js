@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 
 const STORAGE_KEY = 'ai408-study-ui-v1'
+const DEFAULT_SUBJECT_CODE = 'CN'
 
 function loadStoredState() {
   if (typeof window === 'undefined') {
@@ -29,11 +30,14 @@ function normalizePendingPracticeRequest(value) {
   }
 
   const mode = value.mode || 'sequence'
+  const scopeType = value.scopeType || ''
+  const scopeKey = value.scopeKey || ''
   const questionIds = Array.isArray(value.questionIds)
     ? value.questionIds.filter((item) => typeof item === 'string' && item)
     : []
 
-  if (!questionIds.length && !['wrongBook', 'favorites'].includes(mode)) {
+  const supportsScopeRequest = ['paper', 'knowledgePoint'].includes(scopeType) && scopeKey
+  if (!questionIds.length && !['wrongBook', 'favorites'].includes(mode) && !supportsScopeRequest) {
     return null
   }
 
@@ -44,13 +48,15 @@ function normalizePendingPracticeRequest(value) {
     limit: value.limit || (questionIds.length || 20),
     source: value.source || 'review-wrong-retry',
     title: value.title || '',
+    scopeType,
+    scopeKey,
   }
 }
 
 const storedState = loadStoredState()
 
 export const studyStore = reactive({
-  selectedSubjectCode: storedState.selectedSubjectCode || 'DS',
+  selectedSubjectCode: storedState.selectedSubjectCode || DEFAULT_SUBJECT_CODE,
   currentSessionId: storedState.currentSessionId || '',
   currentQuestionId: storedState.currentQuestionId || '',
   practiceMode: storedState.practiceMode || 'sequence',
@@ -93,5 +99,13 @@ export function setPendingPracticeRequest(request) {
 }
 
 export function clearPendingPracticeRequest() {
+  studyStore.pendingPracticeRequest = null
+}
+
+export function resetStudyUiState(subjectCode = DEFAULT_SUBJECT_CODE) {
+  studyStore.selectedSubjectCode = subjectCode
+  studyStore.currentSessionId = ''
+  studyStore.currentQuestionId = ''
+  studyStore.practiceMode = 'sequence'
   studyStore.pendingPracticeRequest = null
 }

@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { API_BASE_URL } from '../api/config'
 import { ApiError } from '../api/errors'
 import { readPayload } from '../api/response'
+import { resetStudyUiState } from './study'
 
 const STORAGE_KEY = 'ai408-auth-session-v1'
 
@@ -49,10 +50,16 @@ if (storedSession) {
 }
 
 export function setAuthSession(session) {
+  const previousUserId = authStore.user?.id || ''
+  const nextUserId = session?.user?.id || ''
+  const shouldResetStudyState = Boolean(nextUserId && previousUserId !== nextUserId)
   authStore.accessToken = session?.accessToken || ''
   authStore.refreshToken = session?.refreshToken || ''
   authStore.expiresIn = session?.expiresIn || 0
   authStore.user = session?.user || null
+  if (shouldResetStudyState) {
+    resetStudyUiState()
+  }
   persistSession({
     accessToken: authStore.accessToken,
     refreshToken: authStore.refreshToken,

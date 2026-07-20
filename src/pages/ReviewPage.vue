@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import SectionBlock from '../components/SectionBlock.vue'
 import StatCard from '../components/StatCard.vue'
 import { getPracticeReview } from '../api/practice'
 import { getStudySummary } from '../api/users'
@@ -40,6 +39,19 @@ const wrongCount = computed(() => review.value.wrongCount || summary.value.wrong
 const answeredCount = computed(() => review.value.answeredCount || summary.value.answeredCount || 0)
 const progress = computed(() => summary.value.progressRate || 0)
 const hasWrongQuestions = computed(() => (review.value.wrongQuestionIds || []).length > 0)
+const outcomeText = computed(() => {
+  if (loading.value) {
+    return '正在读取本次练习结果'
+  }
+  if (!answeredCount.value) {
+    return '还没有可复盘的练习记录'
+  }
+  if (!hasWrongQuestions.value) {
+    return '本次没有错题，可以继续扩大题量'
+  }
+  return `本次沉淀 ${wrongCount.value} 道错题，建议先重做再开新题`
+})
+const weakPointList = computed(() => review.value.weakPoints || [])
 
 function formatSessionTime(totalSeconds) {
   const safe = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0
@@ -104,149 +116,168 @@ onMounted(loadData)
 </script>
 
 <template>
-  <div class="space-y-8">
-    <section class="craft-card-solid rounded-[2rem] p-6 sm:p-8">
-      <div class="flex flex-wrap items-center justify-between gap-4">
+  <div class="space-y-5">
+    <section class="craft-panel p-5 sm:p-6 lg:p-7">
+      <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div>
-          <div class="section-title">本次练习情况</div>
-          <div class="section-subtitle mt-1">当前账号：{{ authStore.user?.nickname || authStore.user?.mobile || '未登录' }}</div>
+          <div class="text-sm font-semibold text-teal-700">练习复盘</div>
+          <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-4xl">{{ outcomeText }}</h1>
+          <p class="mt-3 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+            当前账号：{{ authStore.user?.nickname || authStore.user?.email || authStore.user?.mobile || '未登录' }}。复盘页优先帮助你决定下一步，而不是只展示统计数字。
+          </p>
+
+          <div class="mt-6 flex flex-wrap gap-3">
+            <button v-if="hasWrongQuestions" class="craft-btn craft-btn-primary" @click="retryWrongQuestions">重做本次错题</button>
+            <button class="craft-btn craft-btn-soft" @click="router.push('/mistakes')">进入错题本</button>
+            <button class="craft-btn craft-btn-soft" @click="router.push('/practice')">继续练习</button>
+            <button
+              v-if="hasWrongQuestions"
+              class="craft-btn craft-btn-soft"
+              @click="showWrongDetails = !showWrongDetails"
+            >
+              {{ showWrongDetails ? '收起错题详情' : '查看错题详情' }}
+            </button>
+          </div>
         </div>
-        <div class="flex flex-wrap gap-3">
-          <button class="craft-btn craft-btn-soft" @click="router.push('/practice')">返回练习</button>
-          <button v-if="hasWrongQuestions" class="craft-btn craft-btn-primary" @click="retryWrongQuestions">重做本次错题</button>
-          <button
-            v-if="hasWrongQuestions"
-            class="craft-btn craft-btn-soft"
-            @click="showWrongDetails = !showWrongDetails"
-          >
-            {{ showWrongDetails ? '收起错题详情' : '查看本次错题' }}
-          </button>
+
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div class="flex items-center justify-between text-sm text-slate-500">
+            <span>全局进度</span>
+            <span>{{ progress }}%</span>
+          </div>
+          <div class="mt-3 h-2 overflow-hidden rounded-full bg-white">
+            <div class="h-full rounded-full bg-teal-600" :style="{ width: `${Math.min(progress, 100)}%` }" />
+          </div>
+          <div class="mt-4 rounded-lg bg-white p-3 text-xs leading-6 text-slate-500">
+            会话：{{ studyStore.currentSessionId || '暂无' }}
+          </div>
         </div>
       </div>
 
-      <div v-if="loading" class="mt-6 rounded-[1.5rem] bg-slate-50 p-5 text-sm text-slate-500">正在加载复盘数据...</div>
-      <div v-else-if="error" class="mt-6 rounded-[1.5rem] bg-rose-50 p-5 text-sm text-rose-600">{{ error }}</div>
-      <div v-else>
-        <div class="mt-6 grid gap-4 md:grid-cols-4">
-          <StatCard label="本次正确率" :value="`${accuracy}%`" tone="orange" />
-          <StatCard label="练习时长" :value="formatSessionTime(review.durationSeconds || summary.sessionSeconds)" tone="slate" />
-          <StatCard label="本次错题" :value="wrongCount" tone="rose" />
-          <StatCard label="本次答题数" :value="answeredCount" tone="sky" />
-        </div>
-
-        <div class="mt-6 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-          <div class="rounded-[1.5rem] bg-slate-50 p-5">
-            <div class="flex items-center justify-between text-sm text-slate-500">
-              <span>全局进度</span>
-              <span>{{ progress }}%</span>
-            </div>
-            <div class="mt-4 h-3 overflow-hidden rounded-full bg-white">
-              <div class="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-400" :style="{ width: `${progress}%` }" />
-            </div>
-            <div class="mt-3 text-sm text-slate-500">练习数据已经落库，可以继续复盘、重做错题或进入错题本。</div>
-          </div>
-          <div class="rounded-[1.5rem] bg-slate-50 p-5">
-            <div class="text-sm font-medium text-slate-500">当前练习会话</div>
-            <div class="mt-2 text-lg font-semibold text-slate-900">{{ studyStore.currentSessionId || '暂无' }}</div>
-            <div class="mt-2 text-sm text-slate-500">
-              {{ hasWrongQuestions ? `本次共有 ${wrongCount} 道错题，可直接重做或查看解析。` : '本次没有错题，保持这个状态很可以。' }}
-            </div>
-          </div>
-        </div>
+      <div v-if="loading" class="mt-6 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">正在加载复盘数据...</div>
+      <div v-else-if="error" class="mt-6 rounded-xl bg-rose-50 p-5 text-sm text-rose-600">{{ error }}</div>
+      <div v-else class="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="本次正确率" :value="`${accuracy}%`" tone="orange" />
+        <StatCard label="练习时长" :value="formatSessionTime(review.durationSeconds || summary.sessionSeconds)" tone="slate" />
+        <StatCard label="本次错题" :value="wrongCount" tone="rose" />
+        <StatCard label="本次答题数" :value="answeredCount" tone="sky" />
       </div>
     </section>
 
-    <SectionBlock title="薄弱点">
-      <div v-if="review.weakPoints.length" class="flex flex-wrap gap-3">
-        <span
-          v-for="point in review.weakPoints"
-          :key="point"
-          class="rounded-full bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700"
-        >
-          {{ point }}
-        </span>
-      </div>
-      <div v-else class="rounded-[1.25rem] bg-slate-50 p-4 text-sm text-slate-500">本次暂无明显薄弱点标签。</div>
-    </SectionBlock>
-
-    <SectionBlock title="科目统计">
-      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div v-for="item in review.subjectStats" :key="item.subjectCode" class="craft-card-solid rounded-[1.25rem] p-4">
-          <div class="text-sm text-slate-500">{{ item.subjectName }}</div>
-          <div class="mt-3 flex items-end justify-between">
-            <div class="text-2xl font-semibold text-slate-900">{{ item.correctCount }}</div>
-            <div class="text-sm text-slate-400">正确 / {{ item.wrongCount }} 错误</div>
+    <section class="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+      <div class="craft-panel p-5 sm:p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-slate-950">薄弱点</h2>
+            <p class="mt-1 text-sm text-slate-500">用于后续错题重做和专题训练</p>
           </div>
         </div>
+        <div v-if="weakPointList.length" class="mt-5 flex flex-wrap gap-2">
+          <span
+            v-for="point in weakPointList"
+            :key="point"
+            class="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700"
+          >
+            {{ point }}
+          </span>
+        </div>
+        <div v-else class="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">本次暂无明显薄弱点标签。</div>
       </div>
-    </SectionBlock>
 
-    <SectionBlock title="本次错题回顾">
-      <div v-if="!hasWrongQuestions" class="rounded-[1.5rem] bg-emerald-50 p-5 text-sm text-emerald-700">
+      <div class="craft-panel p-5 sm:p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-slate-950">科目统计</h2>
+            <p class="mt-1 text-sm text-slate-500">看哪个科目拖慢了本次正确率</p>
+          </div>
+        </div>
+        <div v-if="review.subjectStats.length" class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div v-for="item in review.subjectStats" :key="item.subjectCode" class="rounded-xl border border-slate-200 bg-white p-4">
+            <div class="text-sm font-semibold text-slate-950">{{ item.subjectName }}</div>
+            <div class="mt-3 flex items-end justify-between gap-3">
+              <div class="text-2xl font-bold text-teal-700">{{ item.correctCount }}</div>
+              <div class="text-sm text-slate-400">{{ item.wrongCount }} 错误</div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">暂无科目统计。</div>
+      </div>
+    </section>
+
+    <section class="craft-panel p-5 sm:p-6">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-slate-950">本次错题回顾</h2>
+          <p class="mt-1 text-sm text-slate-500">错题详情默认收起，主动作始终保留在顶部</p>
+        </div>
+        <button v-if="hasWrongQuestions" class="craft-btn craft-btn-primary px-4 py-2" @click="retryWrongQuestions">重做本次错题</button>
+      </div>
+
+      <div v-if="!hasWrongQuestions" class="mt-5 rounded-xl bg-emerald-50 p-5 text-sm text-emerald-700">
         本次练习没有错题，可以直接开始新一轮刷题。
       </div>
 
-      <div v-else-if="!showWrongDetails" class="rounded-[1.5rem] bg-slate-50 p-5 text-sm text-slate-600">
-        已记录 {{ review.wrongQuestionIds.length }} 道错题。你可以选择“重做本次错题”，或者点“查看本次错题”进入逐题回顾。
+      <div v-else-if="!showWrongDetails" class="mt-5 rounded-xl bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+        已记录 {{ review.wrongQuestionIds.length }} 道错题。建议先点击“重做本次错题”，如果需要确认原因，再展开错题详情逐题回看。
       </div>
 
-      <div v-else class="grid gap-4">
+      <div v-else class="mt-5 grid gap-4">
         <article
           v-for="question in review.wrongQuestions"
           :key="`${studyStore.currentSessionId}-${question.questionId}`"
-          class="craft-card-solid rounded-[1.5rem] p-5"
+          class="rounded-xl border border-slate-200 bg-white p-5"
         >
-          <div class="flex flex-wrap items-center gap-3">
-            <span class="craft-pill bg-rose-50 text-rose-600">错题 {{ question.orderNo }}</span>
-            <span class="craft-pill bg-sky-50 text-sky-700">{{ question.questionType }}</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-600">错题 {{ question.orderNo }}</span>
+            <span class="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">{{ question.questionType }}</span>
             <span class="text-sm text-slate-500">{{ question.subjectName }}</span>
           </div>
-          <h2 class="mt-4 text-xl font-semibold text-slate-900">{{ question.title }}</h2>
-          <p class="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-500">{{ question.stem }}</p>
+          <h3 class="mt-4 text-xl font-bold text-slate-950">{{ question.title }}</h3>
+          <p class="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{{ question.stem }}</p>
 
           <a
             v-if="question.stemImageUrl"
             :href="question.stemImageUrl"
             target="_blank"
             rel="noreferrer"
-            class="mt-5 block overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-3"
+            class="mt-5 block overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3"
           >
-            <img :src="question.stemImageUrl" alt="题目配图" class="max-h-[420px] w-full rounded-[1rem] object-contain" />
+            <img :src="question.stemImageUrl" alt="题目配图" class="max-h-[420px] w-full rounded-lg object-contain" />
           </a>
 
-          <div v-if="question.questionType !== 'essay'" class="mt-6 space-y-3">
+          <div v-if="question.questionType !== 'essay'" class="mt-5 space-y-3">
             <div
               v-for="option in question.options"
               :key="option.key"
-              class="flex items-center gap-4 rounded-[1.25rem] border px-4 py-4 text-left"
+              class="flex items-start gap-4 rounded-xl border px-4 py-4 text-left"
               :class="optionClass(question, option.key)"
             >
-              <div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-sm font-semibold shadow-sm">
+              <div class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-sm font-bold shadow-sm">
                 {{ option.key }}
               </div>
-              <div class="text-base">{{ option.text }}</div>
+              <div class="text-base leading-7">{{ option.text }}</div>
             </div>
           </div>
 
-          <div v-else class="mt-6 space-y-3">
+          <div v-else class="mt-5 space-y-3">
             <div
               v-for="(step, index) in question.steps"
               :key="`${question.questionId}-${index}`"
-              class="rounded-[1.25rem] border border-slate-200 bg-white p-4"
+              class="rounded-xl border border-slate-200 bg-white p-4"
             >
-              <div class="text-sm font-semibold text-slate-900">步骤 {{ index + 1 }}</div>
-              <p class="mt-2 text-sm leading-6 text-slate-600">{{ step }}</p>
+              <div class="text-sm font-bold text-slate-950">步骤 {{ index + 1 }}</div>
+              <p class="mt-2 text-sm leading-7 text-slate-600">{{ step }}</p>
               <div class="mt-2 text-xs text-slate-400">你的完成情况：{{ question.stepStatus[index] ? '已完成' : '未完成' }}</div>
             </div>
           </div>
 
-          <div class="mt-6 rounded-[1.5rem] bg-slate-50 p-5 text-sm leading-7 text-slate-700">
+          <div class="mt-5 rounded-xl bg-slate-50 p-5 text-sm leading-7 text-slate-700">
             <div>你的答案：{{ answerText(question.userAnswer) }}</div>
             <div class="mt-2">正确答案：{{ answerText(question.correctAnswer) }}</div>
             <div class="mt-3 whitespace-pre-wrap">答案解析：{{ question.analysis || '暂无解析' }}</div>
           </div>
         </article>
       </div>
-    </SectionBlock>
+    </section>
   </div>
 </template>

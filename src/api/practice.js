@@ -1,5 +1,11 @@
 import { request } from './http'
 
+export function getPracticeScopes(type = 'paper') {
+  return request('/api/v1/practice/scopes', {
+    query: { type },
+  })
+}
+
 export function createPracticeSession(payload) {
   return request('/api/v1/practice/sessions', {
     method: 'POST',

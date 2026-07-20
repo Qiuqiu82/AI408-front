@@ -176,7 +176,7 @@ onMounted(loadData)
           </div>
           <div class="mt-4 section-title">错题本</div>
           <div class="mt-1 text-sm text-slate-500">
-            当前账号：{{ authStore.user?.nickname || authStore.user?.mobile || '未登录' }}
+            当前账号：{{ authStore.user?.nickname || authStore.user?.email || authStore.user?.mobile || '未登录' }}
           </div>
         </div>
         <div class="flex flex-wrap gap-3">
